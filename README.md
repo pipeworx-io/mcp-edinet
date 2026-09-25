@@ -5,7 +5,7 @@ company lookup works for every caller with no credential; the two filing-list
 tools take the CALLER's own EDINET Subscription-Key as `_apiKey`. See "Auth"
 below for why it shipped that way rather than on a platform key.
 
-Part of [Pipeworx](https://pipeworx.io) — an MCP gateway connecting AI agents to 1679+ live data sources.
+Part of [Pipeworx](https://pipeworx.io) — an MCP gateway connecting AI agents to 1683+ live data sources.
 
 EDINET is Japan's EDGAR: securities reports (有価証券報告書), quarterly and
 half-year reports, extraordinary reports, large-shareholding reports
@@ -168,7 +168,7 @@ directly, instead of just this one's:
 }
 ```
 
-Both URLs reach the same gateway and the same 1679+ data sources. The
+Both URLs reach the same gateway and the same 1683+ data sources. The
 only difference is which pack's tools are listed **directly**; `ask_pipeworx`
 reaches all of them from either one.
 
