@@ -1,6 +1,6 @@
 {
   "name": "@pipeworx/mcp-edinet",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "EDINET — Japan's corporate-filings system (Financial Services Agency).",
   "type": "module",
   "main": "src/index.ts",
@@ -26,7 +26,7 @@
     "@cloudflare/workers-types": "^4.20260405.1"
   },
   "pipeworx": {
-    "sourceHash": "v1-2bd2fec6a7fc2fedbe9bdbca727d74bcae94aa348c349c929e9e41d2a53a1eba",
-    "sourceCommit": "29fb434ca65fe0f61191f19c3502f583f5fb99d7"
+    "sourceHash": "v1-839108800b4cfb27567f8ef9c16d8568232c9921f29c819923183f7a0dbfea9e",
+    "sourceCommit": "722087a9bda73f85942e8f6bbfd598544cb0d490"
   }
 }

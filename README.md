@@ -5,7 +5,7 @@ company lookup works for every caller with no credential; the two filing-list
 tools take the CALLER's own EDINET Subscription-Key as `_apiKey`. See "Auth"
 below for why it shipped that way rather than on a platform key.
 
-Part of [Pipeworx](https://pipeworx.io) — an MCP gateway connecting AI agents to 1878+ live data sources. This is an independent, unofficial integration — not affiliated with, endorsed by, or published by the upstream provider.
+Part of [Pipeworx](https://pipeworx.io) — an MCP gateway connecting AI agents to 1879+ live data sources. This is an independent, unofficial integration — not affiliated with, endorsed by, or published by the upstream provider.
 
 EDINET is Japan's EDGAR: securities reports (有価証券報告書), quarterly and
 half-year reports, extraordinary reports, large-shareholding reports
@@ -18,6 +18,25 @@ half-year reports, extraordinary reports, large-shareholding reports
 | `edinet_search_filers` | **no** | Resolve a Japanese company → EDINET code + securities code, from the FSA's official EDINET code list (~11,400 filers). Searches Japanese name, English name, kana, EDINET code and ticker. |
 | `edinet_list_filings` | yes | Every document filed on one day, optionally filtered to a filer / document type / XBRL-only. |
 | `edinet_company_filings` | yes | One filer's filings over a range of ≤31 days, newest first. |
+| `edinet_financials` | yes | Headline annual figures (net sales, operating income, net income attributable to owners, total assets, net assets) from a company's annual securities report, with fiscal period, accounting standard (J-GAAP / IFRS / US GAAP), filing document id and margins. |
+
+### Units, periods, basis (edinet_financials)
+
+- Every value carries `currency` and `unit_id` exactly as the filing tags them,
+  and is in WHOLE currency units (the filing's thousands/millions display
+  rounding is not part of the structured data). Nothing is converted or scaled.
+- A value whose unit is not a currency code, or whose text is not a plain
+  number, comes back `value: null`, `unit_status: "unresolved"`, with the text
+  as filed in `value_as_filed`.
+- Only the annual report is read, current-year figures only, so each value is
+  the full fiscal year between `period_start` and `period_end`. Quarterly and
+  half-year reports (cumulative figures) are not read.
+- Consolidated figures win; non-consolidated ones appear only as a labelled
+  fallback. `found:false` (never an empty list) when there is no annual report
+  or no structured data.
+- **UNVERIFIED LIVE as of 2026-10-25:** no Subscription-Key exists on the fleet
+  (see Auth), so this tool was tested against a synthetic fixture only. The
+  first call with a real key should be checked against a known filing.
 
 ## The two access rules
 
@@ -168,7 +187,7 @@ directly, instead of just this one's:
 }
 ```
 
-Both URLs reach the same gateway and the same 1878+ data sources. The
+Both URLs reach the same gateway and the same 1879+ data sources. The
 only difference is which pack's tools are listed **directly**; `ask_pipeworx`
 reaches all of them from either one.
 

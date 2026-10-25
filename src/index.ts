@@ -975,6 +975,7 @@ async function parseJsonBounded<T>(
  * capped.
  */
 
+import { margin, parseFactsCsv, selectFinancials } from './financials.js';
 
 const UA = 'pipeworx-mcp-edinet/1.0 (+https://pipeworx.io)';
 const API_BASE = 'https://api.edinet-fsa.go.jp/api/v2';
@@ -1016,7 +1017,7 @@ function isIndividual(filerType: string): boolean {
 }
 
 /** Minimal ZIP reader: sizes come from the central directory, per sec-ftd. */
-async function unzipSingle(bytes: Uint8Array, suffix: string): Promise<Uint8Array> {
+async function unzipSingle(bytes: Uint8Array, suffix: string, mustInclude?: string): Promise<Uint8Array> {
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let eocd = -1;
   for (let i = bytes.length - 22; i >= 0 && i >= bytes.length - 65_558; i--) {
@@ -1039,6 +1040,7 @@ async function unzipSingle(bytes: Uint8Array, suffix: string): Promise<Uint8Arra
     const name = ascii.decode(bytes.subarray(offset + 46, offset + 46 + nameLength)).toLowerCase();
     offset += 46 + nameLength + extraLength + commentLength;
     if (!name.endsWith(suffix)) continue;
+    if (mustInclude && !name.includes(mustInclude)) continue;
     if (uncompressedSize > MAX_CODELIST_BYTES) throw new Error('EDINET code list exceeds size limit');
     if (localOffset + 30 > bytes.length || dv.getUint32(localOffset, true) !== 0x04034b50) continue;
     const localNameLength = dv.getUint16(localOffset + 26, true);
@@ -1402,6 +1404,118 @@ async function companyFilings(args: Record<string, unknown>, apiKey: string | un
   };
 }
 
+function monthDay(fye: string | null): { m: number; d: number } | null {
+  const mt = /(\d{1,2})月(\d{1,2})日/.exec(fye ?? '');
+  return mt ? { m: Number(mt[1]), d: Number(mt[2]) } : null;
+}
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+async function financials(args: Record<string, unknown>, apiKey: string | undefined) {
+  const key = requireKey(apiKey, 'edinet_financials');
+  const edinetArg = blankToNull(args.edinet_code as string | undefined);
+  const secArg = blankToNull(args.sec_code as string | undefined);
+  if (!edinetArg && !secArg) {
+    throw new Error('edinet_financials requires `edinet_code` (e.g. "E01057") or `sec_code` (e.g. "8035"). Resolve either with edinet_search_filers, which needs no key.');
+  }
+  const fyArg = args.fiscal_year === undefined || args.fiscal_year === null || args.fiscal_year === '' ? null : Number(args.fiscal_year);
+  if (fyArg !== null && !(Number.isInteger(fyArg) && fyArg >= 2010 && fyArg <= 2100)) {
+    throw new Error('edinet_financials: `fiscal_year` is the calendar year in which the fiscal year ENDS (March 2026 year-end = 2026), e.g. 2026.');
+  }
+
+  const filers = await loadFilers();
+  const digits = secArg ? secArg.replace(/\D/g, '') : null;
+  const filer = filers.find((f) => (edinetArg && f.edinet_code === edinetArg) || (digits && (f.ticker === digits || f.sec_code === digits)));
+  if (!filer) {
+    return { found: false, reason: 'No EDINET filer matches that code. Use edinet_search_filers to resolve the company.', source: 'EDINET code list, Financial Services Agency of Japan' };
+  }
+  const md = monthDay(filer.fiscal_year_end);
+  if (!md) {
+    return { found: false, edinet_code: filer.edinet_code, reason: `The filer list gives no fiscal year end for ${filer.filer_name}, so the annual report's filing window cannot be located.`, source: 'EDINET code list, Financial Services Agency of Japan' };
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const fyeOf = (y: number) => `${y}-${pad2(md.m)}-${pad2(md.d)}`;
+  // Candidate year-ends: the one asked for, or the latest whose filing window has opened, then the one before.
+  const years: number[] = [];
+  if (fyArg !== null) years.push(fyArg);
+  else {
+    let y = Number(today.slice(0, 4));
+    while (addDays(fyeOf(y), 30) > today) y--;
+    years.push(y, y - 1);
+  }
+
+  let scanned = 0;
+  for (const y of years) {
+    // Annual reports are due within three months of year end; look back across the 40 days up to the deadline plus a week.
+    const fye = fyeOf(y);
+    const end = addDays(fye, 98);
+    const days: string[] = [];
+    for (let i = 0; i < 40; i++) {
+      const d = addDays(end, -i);
+      if (d >= fye && d <= today) days.push(d);
+    }
+    let doc: EdinetDocument | null = null;
+    for (let i = 0; i < days.length && !doc; i += 8) {
+      const batch = days.slice(i, i + 8);
+      const lists = await Promise.all(batch.map((d) => fetchDay(d, key, 'edinet_financials')));
+      scanned += batch.length;
+      for (const docs of lists) {
+        const hit = docs.find((d) => d.edinetCode === filer.edinet_code && d.docTypeCode === '120'
+          && d.withdrawalStatus !== '1' && (d.periodEnd ?? '').startsWith(String(y)));
+        if (hit) { doc = hit; break; }
+      }
+    }
+    if (!doc) continue;
+    if (doc.csvFlag !== '1') {
+      return { found: false, edinet_code: filer.edinet_code, doc_id: doc.docID, reason: 'The annual securities report exists but EDINET offers no structured (XBRL-derived) data for it, so no values can be read.', source: 'EDINET, Financial Services Agency of Japan' };
+    }
+    const res = await pwFetch(`${API_BASE}/documents/${doc.docID}?${new URLSearchParams({ type: '5', 'Subscription-Key': key })}`);
+    if (!res.ok) throw edinetApiError(res.status, 'edinet_financials');
+    if ((res.headers.get('content-type') ?? '').includes('json')) {
+      throw new Error('edinet_financials: EDINET answered the document request with an error body instead of the data.');
+    }
+    const zip = new Uint8Array(await res.arrayBuffer());
+    const csv = await unzipSingle(zip, '.csv', 'jpcrp030000-asr');
+    const picked = selectFinancials(parseFactsCsv(csv));
+    if (picked.values.length === 0) {
+      return { found: false, edinet_code: filer.edinet_code, doc_id: doc.docID, reason: 'The filing has structured data but none of the headline lines (sales, operating income, net income, assets, equity) could be located in it.', source: 'EDINET, Financial Services Agency of Japan' };
+    }
+    const om = margin(picked.values, 'operating_income');
+    const nm = margin(picked.values, 'net_income_attributable_to_owners');
+    return {
+      found: true,
+      filer: { edinet_code: filer.edinet_code, name: filer.filer_name, name_en: filer.filer_name_en, ticker: filer.ticker },
+      doc_id: doc.docID,
+      document: doc.docDescription ?? null,
+      submitted_at: doc.submitDateTime ?? null,
+      period_start: doc.periodStart ?? null,
+      period_end: doc.periodEnd ?? null,
+      period_kind: 'full fiscal year (annual securities report)',
+      accounting_standard: picked.standard,
+      values: picked.values,
+      lines_not_found: picked.missing,
+      derived: {
+        operating_margin_pct: om?.pct ?? null,
+        net_margin_pct: nm?.pct ?? null,
+        note: 'Margins are computed from the values above, only where both share currency and basis; null otherwise.',
+      },
+      units_note: 'Every amount is in whole units of its stated currency exactly as tagged in the filing (not thousands or millions); nothing is converted.',
+      data_as_of: doc.submitDateTime ?? null,
+      days_scanned: scanned,
+      source: 'EDINET annual securities report (有価証券報告書), Financial Services Agency of Japan',
+    };
+  }
+  return {
+    found: false,
+    edinet_code: filer.edinet_code,
+    fiscal_year: fyArg,
+    days_scanned: scanned,
+    reason: 'No annual securities report was found for this filer in the filing window after the fiscal year end (a newly listed company, a foreign-registered filer, or a year not yet filed).',
+    source: 'EDINET, Financial Services Agency of Japan',
+  };
+}
+
 // ── Tool definitions ────────────────────────────────────────────────────
 
 const tools: McpToolExport['tools'] = [
@@ -1459,6 +1573,21 @@ const tools: McpToolExport['tools'] = [
       required: ['from', 'to', '_apiKey'],
     },
   },
+  {
+    name: 'edinet_financials',
+    description:
+      'Reported annual financials of a Japanese listed company from its EDINET annual securities report: net sales, operating income, net income attributable to owners of the parent, total assets, net assets, with fiscal period, accounting standard (J-GAAP / IFRS / US GAAP), the filing document id, and margins. Each amount states its currency and unit and is the full-fiscal-year figure as filed; an amount whose unit cannot be established is returned unresolved, never guessed. A filer without structured data returns found:false. Requires a free EDINET Subscription-Key via _apiKey. Example: edinet_financials({ sec_code: "8035" }).',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        edinet_code: { type: 'string', description: 'EDINET code, e.g. "E01057".' },
+        sec_code: { type: 'string', description: 'Securities code / ticker instead, e.g. "8035".' },
+        fiscal_year: { type: 'number', description: 'Calendar year in which the fiscal year ends (March 2026 year end = 2026). Default: the latest filed.' },
+        _apiKey: { type: 'string', description: 'EDINET API v2 Subscription-Key.' },
+      },
+      required: ['_apiKey'],
+    },
+  },
 ];
 
 async function callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
@@ -1472,6 +1601,8 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<un
       return listFilings(args, apiKey);
     case 'edinet_company_filings':
       return companyFilings(args, apiKey);
+    case 'edinet_financials':
+      return financials(args, apiKey);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
