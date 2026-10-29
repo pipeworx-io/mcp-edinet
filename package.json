@@ -1,12 +1,20 @@
 {
   "name": "@pipeworx/mcp-edinet",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "description": "EDINET — Japan's corporate-filings system (Financial Services Agency).",
   "type": "module",
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./tools.json": "./tools.json",
+    "./package.json": "./package.json"
+  },
   "bin": {
     "mcp-edinet": "bin/cli.js"
+  },
+  "files": ["bin/", "lib/", "tools.json", "server.json"],
+  "engines": {
+    "node": ">=18"
   },
   "keywords": ["mcp", "mcp-server", "model-context-protocol", "pipeworx", "edinet"],
   "license": "MIT",
@@ -14,19 +22,12 @@
     "type": "git",
     "url": "git+https://github.com/pipeworx-io/mcp-edinet.git"
   },
-  "scripts": {
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "tsx": "^4.19.0"
-  },
-  "devDependencies": {
-    "typescript": "^5.9.3",
-    "@cloudflare/workers-types": "^4.20260405.1"
-  },
+  "mcpName": "io.github.pipeworx-io/edinet",
   "pipeworx": {
-    "sourceHash": "v1-839108800b4cfb27567f8ef9c16d8568232c9921f29c819923183f7a0dbfea9e",
-    "sourceCommit": "722087a9bda73f85942e8f6bbfd598544cb0d490"
+    "mode": "gateway",
+    "slug": "edinet",
+    "gatewaySlug": "edinet",
+    "sourceHash": "v1-76839545fe3bc3ec78ef4bdd248ccf40654ae3273e4375cdceb7316cc25fe391",
+    "sourceCommit": "bb047243cf27f32453103de186b8e6a8b6a1ce79"
   }
 }
