@@ -1,6 +1,6 @@
 {
   "name": "@pipeworx/mcp-edinet",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "EDINET — Japan's corporate-filings system (Financial Services Agency).",
   "type": "module",
   "main": "lib/index.js",
@@ -27,7 +27,7 @@
     "mode": "gateway",
     "slug": "edinet",
     "gatewaySlug": "edinet",
-    "sourceHash": "v1-76839545fe3bc3ec78ef4bdd248ccf40654ae3273e4375cdceb7316cc25fe391",
-    "sourceCommit": "bb047243cf27f32453103de186b8e6a8b6a1ce79"
+    "sourceHash": "v1-0b994af2f62824926bdaf3cc483ff7e14172f6ed2f777f01013b412f34abfcd0",
+    "sourceCommit": "e707a4bb6209f432984c0a83bf64b3138130db89"
   }
 }
